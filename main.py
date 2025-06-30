@@ -7,10 +7,8 @@ from prompt import generate_outline_prompt
 from export_components import create_pdf_bytes,create_markdown_bytes,copy_button, create_references_md_download_button
 
 # Load config
-with open("config.json") as f:
-    config = json.load(f)
 
-HF_API_TOKEN = config["HF_API_TOKEN"]
+HF_API_TOKEN = st.secrets["HF_API_TOKEN"]
 API_URL = "https://router.huggingface.co/hf-inference/models/mistralai/Mistral-7B-Instruct-v0.3"
 headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
 
