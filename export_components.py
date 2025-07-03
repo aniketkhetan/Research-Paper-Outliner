@@ -30,9 +30,6 @@ def create_references_markdown(refs):
         lines.append(f"- **{ref['title']}**, {authors}, *{ref['year']}*. [Link]({ref['url']})")
     return "\n".join(lines)
 
-def create_references_md_download_button(refs, filename="references.md"):
-    md_text = create_references_markdown(refs)
-    return io.BytesIO(md_text.encode("utf-8"))
 
 
 def copy_button(text):

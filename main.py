@@ -2,29 +2,68 @@ import streamlit as st
 import requests
 import os
 import json
+import re
 from collections import OrderedDict
 from prompt import generate_outline_prompt
-from export_components import create_pdf_bytes,create_markdown_bytes,copy_button, create_references_md_download_button
+from export_components import create_pdf_bytes, create_markdown_bytes, copy_button
 
 # Load config
+with open("config.json") as f:
+    config = json.load(f)
 
-HF_API_TOKEN = st.secrets["HF_API_TOKEN"]
-API_URL = "https://router.huggingface.co/hf-inference/models/mistralai/Mistral-7B-Instruct-v0.3"
-headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+HF_API_TOKEN = config["HF_API_TOKEN"]
 
-def query_llm(prompt: str):
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 1024, "return_full_text": False}
+def query_llm(prompt: str, model_choice: str):
+    model_id = {
+        "Mistral": "mistralai/Mistral-7B-Instruct-v0.3",
+        "LLaMA-2 (Chat)": "meta-llama/Llama-3.2-3B-Instruct-Turbo"
+    }.get(model_choice, "mistralai/Mistral-7B-Instruct-v0.3")
+
+    headers = {
+        "Authorization": f"Bearer {HF_API_TOKEN}",
+        "Content-Type": "application/json"
     }
-    response = requests.post(API_URL, headers=headers, json=payload)
+
+    payload = {
+        "model": model_id,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    }
+
+    response = requests.post("https://router.huggingface.co/together/v1/chat/completions", headers=headers, json=payload)
+
     if response.status_code == 200:
-        result = response.json()
-        return result[0]["generated_text"]
+        return response.json()["choices"][0]["message"]["content"]
     else:
         return f"❌ Error {response.status_code}: {response.text}"
 
+def normalize_to_markdown(text):
+    lines = text.splitlines()
+    markdownified = []
+    title_found = False
+    for line in lines:
+        if not title_found and (line.strip().lower().startswith("**title:**") or line.strip().lower().startswith("title:")):
+            title = re.sub(r"(?i)^\*?\*?title:?\*?\*?", "", line).strip()
+            markdownified.append(f"# Title\n{title}\n")
+            title_found = True
+        elif re.match(r"^\d+\.\s+\*\*(.*?)\*\*", line):
+            heading = re.findall(r"\*\*(.*?)\*\*", line)[0]
+            markdownified.append(f"# {heading}")
+        elif re.match(r"^\d+\.\s+", line):
+            heading = line.split(". ", 1)[-1].strip()
+            markdownified.append(f"# {heading}")
+        else:
+            markdownified.append(line)
+    return "\n".join(markdownified)
+
 def parse_outline_to_dict(markdown_text):
+    if not markdown_text.strip().startswith("#"):
+        markdown_text = normalize_to_markdown(markdown_text)
+
     sections = OrderedDict()
     current_section = None
     current_content = []
@@ -49,17 +88,8 @@ def rebuild_outline_from_sections(sections_dict):
         outline += f"# {clean_section}\n{clean_content.strip()}\n\n"
     return outline.strip()
 
-def fetch_references_from_semantic_scholar(title, limit=5):
-    url = "https://api.semanticscholar.org/graph/v1/paper/search"
-    params = {
-        "query": title,
-        "limit": limit,
-        "fields": "title,authors,year,url"
-    }
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        return response.json().get("data", [])
-    return []
+
+
 
 # ---------- Streamlit UI ----------
 st.set_page_config(page_title="🧠 Research Paper Outliner", layout="centered")
@@ -76,13 +106,16 @@ if "edit_mode" not in st.session_state:
 # Input form
 st.subheader("📝 Enter Your Research Topic")
 topic = st.text_area("Topic", placeholder="e.g., Applications of Transformers in Biomedical NLP", height=100)
-generate_clicked = st.button("🚀 Generate Outline")
+
+st.subheader("🤖 Choose a Model")
+model_choice = st.selectbox("Select an LLM", ["Mistral", "LLaMA-2 (Chat)"])
 
 # Generate outline
+generate_clicked = st.button("🚀 Generate Outline")
 if generate_clicked and topic.strip():
     with st.spinner("Generating structured outline..."):
-        prompt = generate_outline_prompt(topic)
-        outline = query_llm(prompt)
+        prompt = generate_outline_prompt(topic, model=model_choice)
+        outline = query_llm(prompt, model_choice)
         if outline.startswith("```") or outline.startswith("~~~"):
             outline = outline.strip("```").strip("~~~")
         st.session_state.custom_sections = parse_outline_to_dict(outline)
@@ -108,9 +141,8 @@ if st.session_state.custom_sections and not st.session_state.edit_mode:
     pdf_bytes = create_pdf_bytes(final_outline)
     md_bytes = create_markdown_bytes(final_outline)
     with col1:
-       copy_button(final_outline)
+        copy_button(final_outline)
     with col2:
-        
         st.download_button(
             label="📥 Download as PDF",
             data=pdf_bytes,
@@ -124,7 +156,6 @@ if st.session_state.custom_sections and not st.session_state.edit_mode:
             file_name="outline.md",
             mime="text/markdown"
         )
-
 
 # EDIT MODE
 elif st.session_state.edit_mode:
@@ -180,26 +211,6 @@ elif st.session_state.edit_mode:
     updated_outline = rebuild_outline_from_sections(st.session_state.custom_sections)
     st.markdown("### 🧾 Updated Outline Preview")
     st.markdown(updated_outline)
-    # col1, col2, col3 = st.columns(3)
-    # pdf_bytes = create_pdf_bytes(updated_outline)
-    # md_bytes = create_markdown_bytes(updated_outline)
-    # with col1:
-    #    copy_button(updated_outline)
-    # with col2:
-        
-    #     st.download_button(
-    #         label="📥 Download as PDF",
-    #         data=pdf_bytes,
-    #         file_name="outline.pdf",
-    #         mime="application/pdf"
-    #     )
-    # with col3:
-    #     st.download_button(
-    #         label="📄 Download as Markdown",
-    #         data=md_bytes,
-    #         file_name="outline.md",
-    #         mime="text/markdown"
-    #     )
 
     if st.button("✅ Done Editing"):
         st.session_state.edit_mode = False

@@ -1,5 +1,6 @@
-def generate_outline_prompt(topic: str) -> str:
-    return f"""
+
+def generate_outline_prompt(topic: str, model: str = "Mistral") -> str:
+    content = f"""
 You are an expert research assistant helping a researcher plan a high-quality academic paper.
 
 Your task is to generate a well-structured, formal, and hierarchical outline for a research paper on the topic:
@@ -7,8 +8,6 @@ Your task is to generate a well-structured, formal, and hierarchical outline for
 **{topic}**
 
 The outline should follow the structure of a standard academic research paper and must include the following top-level sections (unless the topic clearly doesn't require one):
-
-
 
 1. Abstract  
 2. Introduction  
@@ -33,3 +32,4 @@ Use Markdown-style formatting with numbered sections and indented sub-bullets.
 
 Begin the outline below:
 """
+    return f"[INST] {content.strip()} [/INST]" if model == "LLaMA-2 (Chat)" else content.strip()
